@@ -23,13 +23,8 @@ export interface ParamDef {
   hint?: string;
 }
 
-export type StrategyCategory =
-  | 'Trend'
-  | 'Momentum'
-  | 'Mean reversion'
-  | 'Breakout'
-  | 'Benchmark'
-  | 'Custom';
+/** Free text from the API (e.g. "Trend", "Mean reversion"). The filter chips are built from whatever comes back. */
+export type StrategyCategory = string;
 
 export interface StrategyDef {
   id: string;
@@ -46,7 +41,40 @@ export interface StrategyDef {
   origin: string;
   params: ParamDef[];
   updatedAt: string;
-  run: (candles: Candle[], params: Params) => Signal[];
+  /** Present for rule-builder strategies so they can be edited. */
+  rule?: RuleSet;
+  /** null = the API listed this strategy but this frontend has no signal logic for it yet. */
+  run: ((candles: Candle[], params: Params) => Signal[]) | null;
+}
+
+/** Shape returned by `GET /strategies` (snake_case, as FastAPI/Pydantic usually emits). */
+export interface StrategyDto {
+  id: string;
+  name: string;
+  kind: 'builtin' | 'rule';
+  category: string;
+  summary: string;
+  logic: string;
+  best_for?: string;
+  weakness?: string;
+  origin?: string;
+  /** ISO date or datetime. */
+  updated_at: string;
+  /** Which signal function to use. Defaults to `id`. Ignored for kind === 'rule'. */
+  engine?: string;
+  params?: ParamDef[];
+  /** Required when kind === 'rule'. Stored by the backend as an opaque JSON document. */
+  rule?: RuleSet;
+}
+
+/** Shape returned by `GET /market/{symbol}/ohlcv`. Oldest bar first. */
+export interface OhlcvDto {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
 
 /* ---------------- Rule builder ---------------- */
@@ -154,8 +182,10 @@ export interface BacktestResult {
   metrics: Metrics;
 }
 
+/** `GET /market/symbols` */
 export interface SymbolSpec {
   symbol: string;
   name: string;
-  currency: 'INR' | 'USD';
+  /** ISO 4217 code. Defaults to INR when omitted. */
+  currency?: string;
 }

@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import type { BacktestResult, Params, StrategyDef } from '../types';
+import type { BacktestResult, Params, StrategyDef, SymbolSpec } from '../types';
 import { DEFAULT_CONFIG } from '../lib/backtest';
 import { backtestStrategy, WINDOWS } from '../lib/run';
-import { resolveParams } from '../lib/strategies';
-import { SYMBOLS } from '../lib/marketApi';
+import { resolveParams } from '../lib/params';
 import { cn, num, pct, tone } from '../lib/format';
 import { useCandles } from '../hooks';
 import { CompareChart } from './charts';
+import { Notice } from './Notice';
 import { Badge, Select } from './ui';
 
 type SortKey = 'totalReturnPct' | 'cagrPct' | 'sharpe' | 'maxDrawdownPct' | 'winRatePct' | 'trades';
@@ -23,26 +23,28 @@ const COLUMNS: { key: SortKey; label: string; fmt: (v: number) => string; colour
 export function Leaderboard({
   strategies,
   saved,
+  symbols,
   initialSymbol,
   onOpen,
 }: {
   strategies: StrategyDef[];
   saved: Record<string, Params>;
+  symbols: SymbolSpec[];
   initialSymbol: string;
   onOpen: (s: StrategyDef, symbol: string) => void;
 }) {
   const [symbol, setSymbol] = useState(initialSymbol);
   const [windowBars, setWindowBars] = useState(756);
   const [sortKey, setSortKey] = useState<SortKey>('sharpe');
-  const { candles, source, loading } = useCandles(symbol);
+  const { candles, status, error } = useCandles(symbol);
 
   const rows = useMemo(() => {
     if (!candles.length) return [];
     return strategies
-      .filter((s) => s.id !== 'buy-hold')
-      .map((s) => {
-        const { result } = backtestStrategy(s, resolveParams(s, saved[s.id]), candles, windowBars, DEFAULT_CONFIG);
-        return { s, result };
+      .filter((s) => s.run && s.category !== 'Benchmark')
+      .flatMap((s) => {
+        const run = backtestStrategy(s, resolveParams(s, saved[s.id]), candles, windowBars, DEFAULT_CONFIG);
+        return run ? [{ s, result: run.result }] : [];
       });
   }, [strategies, saved, candles, windowBars]);
 
@@ -70,7 +72,7 @@ export function Leaderboard({
           label="Symbol"
           value={symbol}
           onChange={setSymbol}
-          options={SYMBOLS.map((s) => ({ value: s.symbol, label: `${s.symbol} · ${s.name}` }))}
+          options={symbols.map((s) => ({ value: s.symbol, label: `${s.symbol} · ${s.name}` }))}
         />
         <Select
           label="Period"
@@ -79,16 +81,19 @@ export function Leaderboard({
           options={WINDOWS.map((w) => ({ value: String(w.value), label: w.label }))}
         />
         <span className="text-[12px] text-[var(--muted)]">
-          {loading ? 'Loading…' : source === 'api' ? 'Live API data' : 'Sample data'} · default parameters · {DEFAULT_CONFIG.feePct}% fee + {DEFAULT_CONFIG.slippagePct}% slippage per side
+          {status === 'loading' ? 'Loading…' : status === 'error' ? 'Data unavailable' : 'API data'} · default parameters · {DEFAULT_CONFIG.feePct}% fee + {DEFAULT_CONFIG.slippagePct}% slippage per side
         </span>
       </div>
 
-      <section className="border border-[var(--line)] p-3">
+      {status === 'error' && <Notice title="Couldn't load price history">{error}</Notice>}
+      {status === 'loading' && <Notice busy title="Loading market data…" />}
+
+      <section className="border border-[var(--line)] p-3" hidden={status !== 'ready'}>
         <h3 className="m-0 text-[13px] font-semibold">Top 5 by {COLUMNS.find((c) => c.key === sortKey)?.label}, growth of 100</h3>
         {chartSeries.length > 0 ? <CompareChart series={chartSeries} /> : <div className="h-[300px]" />}
       </section>
 
-      <div className="overflow-x-auto border border-[var(--ink)]">
+      <div className="overflow-x-auto border border-[var(--ink)]" hidden={status !== 'ready'}>
         <table className="tabular w-full border-collapse text-left text-[13px]">
           <thead className="bg-[var(--soft)] text-[12px]">
             <tr>

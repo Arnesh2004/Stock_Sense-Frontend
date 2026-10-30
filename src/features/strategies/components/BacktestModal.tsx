@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import type { BacktestConfig, Params, StrategyDef } from '../types';
+import type { BacktestConfig, Params, StrategyDef, SymbolSpec } from '../types';
 import { DEFAULT_CONFIG, explainResult } from '../lib/backtest';
 import { backtestStrategy, WINDOWS } from '../lib/run';
-import { SYMBOLS } from '../lib/marketApi';
 import { money, num, pct, tone, cn } from '../lib/format';
 import { useCandles } from '../hooks';
 import { DrawdownChart, EquityChart, PriceTradesChart } from './charts';
 import { ParamForm } from './ParamForm';
+import { Notice } from './Notice';
 import { Badge, Modal, NumberField, Select, Stat } from './ui';
 
 const REASON: Record<string, string> = { signal: 'Signal', stop: 'Stop-loss', target: 'Take-profit', end: 'End of data' };
@@ -14,11 +14,13 @@ const REASON: Record<string, string> = { signal: 'Signal', stop: 'Stop-loss', ta
 export function BacktestModal({
   strategy,
   initialParams,
+  symbols,
   initialSymbol,
   onClose,
 }: {
   strategy: StrategyDef;
   initialParams: Params;
+  symbols: SymbolSpec[];
   initialSymbol: string;
   onClose: () => void;
 }) {
@@ -26,8 +28,8 @@ export function BacktestModal({
   const [windowBars, setWindowBars] = useState(756);
   const [params, setParams] = useState<Params>(initialParams);
   const [cfg, setCfg] = useState<BacktestConfig>(DEFAULT_CONFIG);
-  const { candles, source, loading } = useCandles(symbol);
-  const ccy = SYMBOLS.find((s) => s.symbol === symbol)?.currency ?? 'INR';
+  const { candles, status, error } = useCandles(symbol);
+  const ccy = symbols.find((s) => s.symbol === symbol)?.currency ?? 'INR';
 
   const run = useMemo(
     () => (candles.length ? backtestStrategy(strategy, params, candles, windowBars, cfg) : null),
@@ -58,7 +60,7 @@ export function BacktestModal({
                 value={symbol}
                 onChange={setSymbol}
                 className="min-w-0 flex-1"
-                options={SYMBOLS.map((s) => ({ value: s.symbol, label: `${s.symbol} · ${s.name}` }))}
+                options={symbols.map((s) => ({ value: s.symbol, label: `${s.symbol} · ${s.name}` }))}
               />
               <Select
                 label="Period"
@@ -68,7 +70,7 @@ export function BacktestModal({
               />
             </div>
             <p className="m-0 text-[12px] text-[var(--muted)]">
-              Data: {loading ? 'loading…' : source === 'api' ? 'live API (delayed)' : 'sample data (synthetic, for demo)'}
+              Data: {status === 'loading' ? 'loading…' : status === 'error' ? 'unavailable' : `${candles.length} daily bars from the API`}
             </p>
           </section>
 
@@ -96,8 +98,14 @@ export function BacktestModal({
 
         {/* ---------- results ---------- */}
         <div className="min-w-0">
-          {!run || !m ? (
-            <div className="grid h-64 place-items-center text-sm text-[var(--muted)]">Loading market data…</div>
+          {!strategy.run ? (
+            <Notice title="This strategy can't be simulated here yet">
+              The API lists it, but the frontend has no signal logic for engine "{strategy.id}".
+            </Notice>
+          ) : status === 'error' ? (
+            <Notice title="Couldn't load price history">{error}</Notice>
+          ) : !run || !m ? (
+            <Notice busy title="Loading market data…" />
           ) : (
             <div className="grid gap-5">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">

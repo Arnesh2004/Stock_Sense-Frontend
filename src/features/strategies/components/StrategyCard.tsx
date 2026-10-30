@@ -6,10 +6,13 @@ export function StrategyCard({
   strategy,
   onBacktest,
   onEdit,
+  blockedReason,
 }: {
   strategy: StrategyDef;
   onBacktest: () => void;
   onEdit: () => void;
+  /** When set, Backtest is disabled and this is shown as the tooltip. */
+  blockedReason?: string;
 }) {
   const custom = strategy.kind === 'rule';
   return (
@@ -28,7 +31,15 @@ export function StrategyCard({
       </div>
       <p className="mb-4 mt-2 flex-1 text-[13px] leading-relaxed text-[var(--ink)]">{strategy.summary}</p>
       <div className="flex gap-2">
-        <Button variant="solid" small onClick={onBacktest}>Backtest</Button>
+        <Button
+          variant="solid"
+          small
+          onClick={onBacktest}
+          disabled={!strategy.run || !!blockedReason}
+          title={blockedReason ?? (strategy.run ? undefined : 'No signal logic for this strategy in the frontend yet')}
+        >
+          Backtest
+        </Button>
         <Button small onClick={onEdit}>Edit</Button>
       </div>
     </article>

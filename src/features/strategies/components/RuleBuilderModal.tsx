@@ -103,10 +103,23 @@ export function RuleBuilderModal({
   onClose,
 }: {
   initial?: RuleSet;
-  onSave: (r: RuleSet) => void;
-  onDelete?: (id: string) => void;
+  onSave: (r: RuleSet, isNew: boolean) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const attempt = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong.');
+      setBusy(false);
+    }
+  };
   const [rule, setRule] = useState<RuleSet>(
     () =>
       initial ?? {
@@ -131,19 +144,21 @@ export function RuleBuilderModal({
             <Button
               variant="danger"
               className="mr-auto"
+              disabled={busy}
               onClick={() => {
-                if (window.confirm(`Delete "${rule.name}"?`)) {
-                  onDelete(rule.id);
-                  onClose();
-                }
+                if (window.confirm(`Delete "${rule.name}"?`)) void attempt(() => onDelete(rule.id));
               }}
             >
               Delete
             </Button>
           )}
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="solid" disabled={!valid} onClick={() => { onSave({ ...rule, name: rule.name.trim() }); onClose(); }}>
-            Save strategy
+          <Button
+            variant="solid"
+            disabled={!valid || busy}
+            onClick={() => void attempt(() => onSave({ ...rule, name: rule.name.trim() }, !initial))}
+          >
+            {busy ? 'Saving…' : 'Save strategy'}
           </Button>
         </>
       }
@@ -171,6 +186,7 @@ export function RuleBuilderModal({
           {describeRule(rule)}
         </div>
         {!valid && <p className="m-0 text-[13px] text-[var(--neg)]">Add a name and at least one entry condition.</p>}
+        {error && <p role="alert" className="m-0 text-[13px] text-[var(--neg)]">Couldn't save: {error}</p>}
       </div>
     </Modal>
   );

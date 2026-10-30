@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Params, StrategyDef } from '../types';
-import { defaultParams } from '../lib/strategies';
+import { defaultParams } from '../lib/params';
 import { ParamForm } from './ParamForm';
 import { Badge, Button, Modal } from './ui';
 

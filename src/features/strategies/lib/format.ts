@@ -1,10 +1,15 @@
-export const money = (v: number, currency: 'INR' | 'USD' = 'INR', compact = false): string =>
-  new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: compact ? 1 : 0,
-    notation: compact ? 'compact' : 'standard',
-  }).format(v);
+export const money = (v: number, currency = 'INR', compact = false): string => {
+  try {
+    return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: compact ? 1 : 0,
+      notation: compact ? 'compact' : 'standard',
+    }).format(v);
+  } catch {
+    return v.toFixed(0); // unknown currency code from the API
+  }
+};
 
 export const pct = (v: number, digits = 1): string =>
   `${v > 0 ? '+' : ''}${v.toFixed(digits)}%`;

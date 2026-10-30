@@ -1,20 +1,19 @@
 import { useMemo, useState } from 'react';
-import type { RuleSet, StrategyCategory, StrategyDef } from './types';
-import { resolveParams } from './lib/strategies';
-import { SYMBOLS } from './lib/marketApi';
+import type { RuleSet, StrategyDef } from './types';
+import { resolveParams } from './lib/params';
 import { describeRule } from './lib/ruleEngine';
-import { useStrategyLibrary } from './hooks';
+import { useStrategyLibrary, useSymbols } from './hooks';
 import { StrategyCard } from './components/StrategyCard';
 import { BacktestModal } from './components/BacktestModal';
 import { StrategyEditModal } from './components/StrategyEditModal';
 import { RuleBuilderModal } from './components/RuleBuilderModal';
 import { Leaderboard } from './components/Leaderboard';
+import { Notice } from './components/Notice';
 import { Badge, Button } from './components/ui';
 import { cn } from './lib/format';
 
 type Tab = 'library' | 'leaderboard';
-type Filter = 'All' | StrategyCategory;
-const FILTERS: Filter[] = ['All', 'Trend', 'Momentum', 'Mean reversion', 'Breakout', 'Custom', 'Benchmark'];
+const ALL = 'All';
 
 type Dialog =
   | { kind: 'backtest'; strategy: StrategyDef; symbol: string }
@@ -24,25 +23,34 @@ type Dialog =
 
 export default function StrategiesPage() {
   const lib = useStrategyLibrary();
+  const market = useSymbols();
   const [tab, setTab] = useState<Tab>('library');
-  const [filter, setFilter] = useState<Filter>('All');
+  const [filter, setFilter] = useState(ALL);
   const [query, setQuery] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
-  const defaultSymbol = SYMBOLS[0].symbol;
+  const defaultSymbol = market.symbols[0]?.symbol ?? '';
+  const marketReady = market.status === 'ready' && market.symbols.length > 0;
+
+  // Categories come from the API data, not from a hardcoded list.
+  const categories = useMemo(() => [ALL, ...new Set(lib.strategies.map((s) => s.category))], [lib.strategies]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return lib.strategies.filter(
-      (s) => (filter === 'All' || s.category === filter) && (!q || `${s.name} ${s.summary} ${s.category}`.toLowerCase().includes(q)),
+      (s) => (filter === ALL || s.category === filter) && (!q || `${s.name} ${s.summary} ${s.category}`.toLowerCase().includes(q)),
     );
   }, [lib.strategies, filter, query]);
 
-  const exampleRule = lib.rules[0];
+  const exampleRule = lib.strategies.find((s) => s.rule)?.rule;
 
   const edit = (s: StrategyDef) =>
-    s.kind === 'rule'
-      ? setDialog({ kind: 'rule', rule: lib.rules.find((r) => r.id === s.id) })
-      : setDialog({ kind: 'edit', strategy: s });
+    s.kind === 'rule' ? setDialog({ kind: 'rule', rule: s.rule }) : setDialog({ kind: 'edit', strategy: s });
+
+  const marketProblem = market.status === 'error'
+    ? market.error
+    : market.status === 'ready' && market.symbols.length === 0
+      ? 'The API returned no symbols.'
+      : '';
 
   const close = () => setDialog(null);
 
@@ -52,7 +60,7 @@ export default function StrategiesPage() {
         <div>
           <h1 className="m-0 text-2xl font-bold">Strategies</h1>
           <p className="m-0 mt-1 text-[13px] text-[var(--muted)]">
-            {lib.strategies.length} strategies · backtest any of them on historical data. Paper money only.
+            {lib.status === 'ready' ? `${lib.strategies.length} strategies · ` : ''}backtest any of them on historical data. Paper money only.
           </p>
         </div>
         <div className="flex gap-2">
@@ -78,10 +86,26 @@ export default function StrategiesPage() {
         ))}
       </div>
 
-      <div className="mt-5">
-        {tab === 'library' ? (
+      <div className="mt-5 grid gap-4">
+        {marketProblem && (
+          <Notice title="Market data unavailable" onRetry={market.reload} busy={market.status === 'loading'}>
+            {marketProblem} Backtests need the symbol list and price history from the API.
+          </Notice>
+        )}
+
+        {lib.status === 'loading' && <Notice busy title="Loading strategies…" />}
+        {lib.status === 'error' && (
+          <Notice title="Couldn't load strategies" onRetry={lib.reload}>
+            {lib.error} Strategies are loaded from the API (GET /strategies).
+          </Notice>
+        )}
+        {lib.status === 'ready' && lib.strategies.length === 0 && (
+          <Notice title="No strategies yet">The API returned an empty list.</Notice>
+        )}
+
+        {lib.status === 'ready' && lib.strategies.length > 0 && (tab === 'library' ? (
           <>
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 type="search"
                 aria-label="Search strategies"
@@ -91,7 +115,7 @@ export default function StrategiesPage() {
                 className="w-full max-w-xs border border-[var(--line)] px-3 py-1.5 text-sm sm:w-64"
               />
               <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by category">
-                {FILTERS.map((f) => (
+                {categories.map((f) => (
                   <button
                     key={f}
                     aria-pressed={filter === f}
@@ -108,13 +132,14 @@ export default function StrategiesPage() {
             </div>
 
             {visible.length === 0 ? (
-              <p className="border border-dashed border-[var(--line)] p-6 text-center text-sm text-[var(--muted)]">No strategies match your search.</p>
+              <p className="m-0 border border-dashed border-[var(--line)] p-6 text-center text-sm text-[var(--muted)]">No strategies match your search.</p>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {visible.map((s) => (
                   <StrategyCard
                     key={s.id}
                     strategy={s}
+                    blockedReason={marketReady ? undefined : 'Market data is not available from the API yet'}
                     onBacktest={() => setDialog({ kind: 'backtest', strategy: s, symbol: defaultSymbol })}
                     onEdit={() => edit(s)}
                   />
@@ -122,14 +147,15 @@ export default function StrategiesPage() {
               </div>
             )}
           </>
-        ) : (
+        ) : marketReady ? (
           <Leaderboard
             strategies={lib.strategies}
             saved={lib.saved}
+            symbols={market.symbols}
             initialSymbol={defaultSymbol}
             onOpen={(s, symbol) => setDialog({ kind: 'backtest', strategy: s, symbol })}
           />
-        )}
+        ) : null)}
       </div>
 
       {/* Phase 7 block from the wireframe */}
@@ -159,6 +185,7 @@ export default function StrategiesPage() {
           key={dialog.strategy.id + dialog.symbol}
           strategy={dialog.strategy}
           initialParams={resolveParams(dialog.strategy, lib.saved[dialog.strategy.id])}
+          symbols={market.symbols}
           initialSymbol={dialog.symbol}
           onClose={close}
         />
@@ -173,7 +200,7 @@ export default function StrategiesPage() {
         />
       )}
       {dialog?.kind === 'rule' && (
-        <RuleBuilderModal initial={dialog.rule} onSave={lib.saveRule} onDelete={lib.deleteRule} onClose={close} />
+        <RuleBuilderModal initial={dialog.rule} onSave={lib.saveRule} onDelete={lib.removeStrategy} onClose={close} />
       )}
     </div>
   );

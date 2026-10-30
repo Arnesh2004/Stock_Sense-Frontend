@@ -7,7 +7,6 @@ import type {
   OperandType,
   RuleSet,
   Signal,
-  StrategyDef,
 } from '../types';
 import { bollinger, ema, highest, lowest, roc, rsi, sma } from './indicators';
 import type { Series } from './indicators';
@@ -139,42 +138,3 @@ export function runRule(rule: RuleSet, candles: Candle[]): Signal[] {
   }
   return out;
 }
-
-export function ruleToStrategy(rule: RuleSet): StrategyDef {
-  return {
-    id: rule.id,
-    name: rule.name,
-    kind: 'rule',
-    category: 'Custom',
-    summary: describeRule(rule),
-    logic: describeRule(rule),
-    bestFor: 'Your own hypothesis',
-    weakness: 'Untested ideas are easy to overfit; check other symbols and periods',
-    origin: 'Rule builder',
-    params: [],
-    updatedAt: rule.updatedAt,
-    run: (candles) => runRule(rule, candles),
-  };
-}
-
-/** The example from the wireframe: IF RSI(14) < 30 AND close > SMA(200) THEN BUY. EXIT when RSI(14) > 55. */
-export const SEED_RULES: RuleSet[] = [
-  {
-    id: 'seed-rsi-sma200',
-    name: 'My RSI + SMA200 filter',
-    updatedAt: '2026-10-20',
-    entry: {
-      logic: 'AND',
-      conditions: [
-        { id: 'seed-c1', left: makeOperand('rsi', { period: 14 }), op: '<', right: makeOperand('value', { value: 30 }) },
-        { id: 'seed-c2', left: makeOperand('close'), op: '>', right: makeOperand('sma', { period: 200 }) },
-      ],
-    },
-    exit: {
-      logic: 'OR',
-      conditions: [
-        { id: 'seed-c3', left: makeOperand('rsi', { period: 14 }), op: '>', right: makeOperand('value', { value: 55 }) },
-      ],
-    },
-  },
-];
